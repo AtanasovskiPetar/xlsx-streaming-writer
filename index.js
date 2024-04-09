@@ -1,0 +1,1 @@
+module.exports = require("./src/stream_writer_xlsx");
