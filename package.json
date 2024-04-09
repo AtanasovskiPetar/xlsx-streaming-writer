@@ -1,0 +1,22 @@
+{
+  "name": "semos-cloud-xlsx-streaming-writer",
+  "version": "1.0.0",
+  "description": "Node.js package for streaming data into Excel file.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AtanasovskiPetar/xlsx-streaming-writer.git"
+  },
+  "author": "Petar Atanasovski",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AtanasovskiPetar/xlsx-streaming-writer/issues"
+  },
+  "homepage": "https://github.com/AtanasovskiPetar/xlsx-streaming-writer#readme"
+}
