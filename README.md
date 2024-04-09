@@ -67,6 +67,44 @@ xlsx.getFile().then(buffer => {
   fs.writeFileSync("result.xlsx", buffer);
 });
 ```
+### Generate EXCEL with batch streming
+```javascript
+async function main(req, localization) {
+        let pageNumber = 0;
+        const rs = wrapRowsInStream([]);
+        rs.setMaxListeners(1000000);
+        try {
+            while (true) {
+                const dataChunk = await fetchDataChunk(pageNumber, req, localization);
+                if(pageNumber === 1){
+                  break;
+                }else{
+                  await writeToExcelStream(dataChunk, rs);
+                }
+                pageNumber++;
+            }
+        } catch (error) {
+            console.error('Error occurred:', error);
+        } finally {
+          
+            const styles = {
+              header: {fill: '005CB7', format: '0.00', border: 1, font: 1}, //font: 1 - white, 13, calibri, bold
+              evenRow: {fill: 'FFFFFF', format: '0.00', border: 1, font: 0}, //font: 0 - black, 10, calibri, normal
+              oddRow: {fill: 'E4E4E6', format: '0.00', border: 1, font: 0},
+            }
+            const xlsx = new XlsxStreamWriter(styles);
+            xlsx.addRows(rs);
+
+            xlsx.getFile().then(buffer => {
+              fs.writeFileSync("package.xlsx", buffer);
+            });
+
+            console.log('Excel file generated successfully.');
+        }
+      }
+
+      await main(req, localization);
+```
 ### Important
 Note that for creating styles evenRow is <b>MANDATORY</b> but header and oddRow are optional</br>
 #### This package offers minimal customization options.
