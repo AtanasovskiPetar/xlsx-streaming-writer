@@ -76,7 +76,7 @@ async function main(req, localization) {
         try {
             while (true) {
                 const dataChunk = await fetchDataChunk(pageNumber, req, localization);
-                if(pageNumber === 1){
+                if(dataChunk.length === 0){
                   break;
                 }else{
                   await writeToExcelStream(dataChunk, rs);
@@ -96,7 +96,7 @@ async function main(req, localization) {
             xlsx.addRows(rs);
 
             xlsx.getFile().then(buffer => {
-              fs.writeFileSync("package.xlsx", buffer);
+              fs.writeFileSync("file_name.xlsx", buffer);
             });
 
             console.log('Excel file generated successfully.');
