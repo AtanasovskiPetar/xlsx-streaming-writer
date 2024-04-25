@@ -86,10 +86,10 @@ const getCellXfXml = ({ numFmtId, fillId, border, font }) =>
   </xf>`;
 
 const cellXfXmlDefault = [
-  `<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0">
+  `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0">
       <alignment horizontal="center" vertical="center"/>
     </xf>`,
-    `<xf numFmtId="0" fontId="0" fillId="1" borderId="1" xfId="0">
+    `<xf numFmtId="0" fontId="0" fillId="1" borderId="0" xfId="0">
 			<alignment horizontal="center" vertical="center"/>
 		</xf>`
   ];
