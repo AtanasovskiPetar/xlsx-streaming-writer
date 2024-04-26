@@ -23,6 +23,14 @@ class XlsxStreamWriter {
     this.sharedStringsMap = {};
     this.sharedStringsHashMap = {};
 
+    if(!styles){
+      styles = {
+        header: {fill: '005CB7', format: '0.00', border: 1, font: 1}, //font: 1 - white, 13, calibri, bold
+        evenRow: {fill: 'FFFFFF', format: '0.00', border: 1, font: 0}, //font: 0 - black, 10, calibri, normal
+        oddRow: {fill: 'E4E4E6', format: '0.00', border: 1, font: 0},
+      }
+    }
+
     if(styles){
       if(styles.evenRow){
         this.options.styles.push(styles.evenRow);
