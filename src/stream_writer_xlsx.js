@@ -5,6 +5,7 @@ const xmlParts = require("./parts");
 const xmlBlobs = require("./blobs");
 const { getCellAddress, wrapRowsInStream, escapeXml } = require("./helpers");
 const getStyles = require('./styles').getStyles;
+const fs = require('fs');
 // const { crc32 } = require("crc");
 
 const defaultOptions = {
@@ -14,33 +15,36 @@ const defaultOptions = {
 };
 
 class XlsxStreamWriter {
-  constructor(styles, options=undefined) {
-    this.options = Object.assign(defaultOptions, options);
-    this.sheetXmlStream = null;
-
-    this.sharedStringsXmlStream = null;
+  constructor(dir = 'excels', styles = undefined, options = undefined) {
+    this.options = Object.assign({}, defaultOptions, options);
+    this.dir = dir;
     this.sharedStringsArr = [];
     this.sharedStringsMap = {};
-    this.sharedStringsHashMap = {};
+    this.rowIndex = 0;
+    this.uniqueCount = 0;
+    this.addRowsComplete = false;
+    this.finalizeSharedStringsComplete = false;
+    this.sheetFile = `${this.dir}/sheet1.xml`;
+    this.sharedStringsFile = `${this.dir}/sharedStrings.xml`;
 
-    if(!styles){
+    if (!styles) {
       styles = {
-        header: {fill: '005CB7', format: '0.00', border: 1, font: 1}, //font: 1 - white, 13, calibri, bold
-        evenRow: {fill: 'FFFFFF', format: '0.00', border: 1, font: 0}, //font: 0 - black, 10, calibri, normal
-        oddRow: {fill: 'E4E4E6', format: '0.00', border: 1, font: 0},
+        header: { fill: '005CB7', format: '0.00', border: 1, font: 1 }, //font: 1 - white, 13, calibri, bold
+        evenRow: { fill: 'FFFFFF', format: '0.00', border: 1, font: 0 }, //font: 0 - black, 10, calibri, normal
+        oddRow: { fill: 'E4E4E6', format: '0.00', border: 1, font: 0 },
       }
     }
 
-    if(styles){
-      if(styles.evenRow){
+    if (styles) {
+      if (styles.evenRow) {
         this.options.styles.push(styles.evenRow);
       }
-      if(styles.oddRow){
+      if (styles.oddRow) {
         this.options.styles.push(styles.oddRow);
       } else {
         this.options.styles.push(styles.evenRow);
       }
-      if(styles.header){
+      if (styles.header) {
         this.options.styles.push(styles.header);
       } else {
         this.options.styles.push(styles.evenRow);
@@ -51,10 +55,18 @@ class XlsxStreamWriter {
       "[Content_Types].xml": cleanUpXml(xmlBlobs.contentTypes),
       "_rels/.rels": cleanUpXml(xmlBlobs.rels),
       "xl/workbook.xml": cleanUpXml(xmlBlobs.workbook),
-      // "xl/styles.xml": cleanUpXml(xmlBlobs.styles),
       "xl/styles.xml": cleanUpXml(getStyles(this.options.styles)),
       "xl/_rels/workbook.xml.rels": cleanUpXml(xmlBlobs.workbookRels),
     };
+
+    this._initializeFiles();
+  }
+
+  _initializeFiles() {
+    if (!fs.existsSync(this.dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(this.sheetFile, xmlParts.sheetHeader, 'utf8');
   }
 
   /**
@@ -63,6 +75,7 @@ class XlsxStreamWriter {
    * @return {undefined}
    */
   addRows(rowsOrStream) {
+    this.addRowsComplete = false;
     let rowsStream;
     if (rowsOrStream instanceof Readable) rowsStream = rowsOrStream;
     else if (Array.isArray(rowsOrStream))
@@ -71,13 +84,39 @@ class XlsxStreamWriter {
       throw Error(
         "Argument must be an array of arrays or a readable stream of arrays",
       );
+
     const rowsToXml = this._getRowsToXmlTransformStream();
     const tsToString = this._getToStringTransforStream();
-    // TODO why do we need to call .toString in case we want to inline strings?
-    this.sheetXmlStream = this.options.inlineStrings
-      ? rowsStream.pipe(rowsToXml).pipe(tsToString)
-      : rowsStream.pipe(rowsToXml);
-    this.sharedStringsXmlStream = this._getSharedStringsXmlStream();
+
+    const writeStream = fs.createWriteStream(this.sheetFile, { flags: 'a' });
+
+    return new Promise((resolve, reject) => {
+      writeStream.on('finish', () => {
+        this.addRowsComplete = true;
+        resolve();
+      });
+      writeStream.on('error', (err) => {
+        this.addRowsComplete = false;
+        reject(err);
+      });
+
+      const handleStreamError = (err) => {
+        this.addRowsComplete = false;
+        reject(err);
+      };
+
+      if (this.options.inlineStrings) {
+        rowsStream.pipe(rowsToXml).pipe(writeStream).pipe(tsToString);
+        rowsStream.on('error', handleStreamError);
+        rowsToXml.on('error', handleStreamError);
+        tsToString.on('error', handleStreamError);
+      } else {
+        rowsStream.pipe(rowsToXml).pipe(writeStream);
+        rowsStream.on('error', handleStreamError);
+        rowsToXml.on('error', handleStreamError);
+      }
+    });
+
   }
 
   _getToStringTransforStream() {
@@ -91,21 +130,11 @@ class XlsxStreamWriter {
 
   _getRowsToXmlTransformStream() {
     const ts = PassThrough({ objectMode: true });
-    let c = 0;
     ts._transform = (data, encoding, callback) => {
-      if (c === 0) {
-        ts.push(xmlParts.sheetHeader, "utf8");
-      }
-      const rowXml = this._getRowXml(data, c);
-      // console.log(rowXml);
+      const rowXml = this._getRowXml(data, this.rowIndex);
       ts.push(rowXml.toString(), "utf8");
-      c++;
+      this.rowIndex++;
       callback();
-    };
-
-    ts._flush = cb => {
-      ts.push(xmlParts.sheetFooter, "utf8");
-      cb();
     };
     return ts;
   }
@@ -133,7 +162,6 @@ class XlsxStreamWriter {
 
   _getStringCellXml(value, address, styleId) {
     const stringValue = String(value);
-    // console.log(value, stringValue);
     return this.options.inlineStrings
       ? xmlParts.getInlineStringCellXml(escapeXml(String(value)), address, styleId)
       : xmlParts.getStringCellXml(this._lookupString(stringValue), address, styleId);
@@ -145,47 +173,63 @@ class XlsxStreamWriter {
     sharedStringIndex = this.sharedStringsArr.length;
     this.sharedStringsMap[value] = sharedStringIndex;
     this.sharedStringsArr.push(value);
+    this.uniqueCount++;
+    fs.appendFileSync(this.sharedStringsFile, xmlParts.getSharedStringXml(escapeXml(value)), 'utf8');
     return sharedStringIndex;
   }
 
-  _getSharedStringsXmlStream() {
-    const rs = Readable();
-    let c = 0;
-    rs._read = () => {
-      if (c === 0) {
-        rs.push(xmlParts.getSharedStringsHeader(this.sharedStringsArr.length));
-      }
-      if (c === this.sharedStringsArr.length) {
-        rs.push(xmlParts.sharedStringsFooter);
-        rs.push(null);
-      } else
-        rs.push(
-          xmlParts.getSharedStringXml(
-            escapeXml(String(this.sharedStringsArr[c])),
-          ),
-        );
-      c++;
-    };
-    return rs;
+  _finalizeSharedStringsFile() {
+    const sharedStringsFooter = xmlParts.sharedStringsFooter;
+    const tempFilePath = `${this.dir}/tmp_sharedStrings.xml`;
+    const header = xmlParts.getSharedStringsHeader(this.uniqueCount);
+
+    return new Promise((resolve, reject) => {
+      fs.writeFileSync(tempFilePath, header);
+      const readStream = fs.createReadStream(this.sharedStringsFile, { highWaterMark: 1024 * 1024 });
+      const writeStream = fs.createWriteStream(tempFilePath, { flags: 'a' });
+
+      readStream.on('data', (chunk) => {
+        writeStream.write(chunk);
+      });
+      readStream.on('end', () => {
+        writeStream.end(sharedStringsFooter, () => {
+          fs.rename(tempFilePath, this.sharedStringsFile, (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              this.finalizeSharedStringsComplete = true;
+              resolve();
+            }
+          });
+        });
+      });
+      readStream.on('error', (err) => {
+        reject(err);
+      });
+      writeStream.on('error', (err) => {
+        reject(err);
+      });
+      
+    });
   }
 
-  _clearSharedStrings() {
-    this.sharedStringsMap = {};
-    this.sharedStringsArr = [];
-  }
-
-  // returns blob in a browser, buffer in nodejs
-  getFile() {
-    this._clearSharedStrings();
+  async getFile() {
+    while (!this.addRowsComplete) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    this._finalizeSharedStringsFile();
+    while (!this.finalizeSharedStringsComplete) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     const zip = new JSZip();
     // add all static files
     Object.keys(this.xlsx).forEach(key => zip.file(key, this.xlsx[key]));
-
+    // add footer to the sheet file
+    fs.appendFileSync(this.sheetFile, xmlParts.sheetFooter);
     // add "xl/worksheets/sheet1.xml"
-    zip.file("xl/worksheets/sheet1.xml", this.sheetXmlStream);
+    zip.file("xl/worksheets/sheet1.xml", fs.readFileSync(this.sheetFile));
     // add "xl/sharedStrings.xml"
-    zip.file("xl/sharedStrings.xml", this.sharedStringsXmlStream);
-    this._clearSharedStrings();
+    zip.file("xl/sharedStrings.xml", fs.readFileSync(this.sharedStringsFile));
 
     const isBrowser =
       typeof window !== "undefined" &&
@@ -217,17 +261,6 @@ class XlsxStreamWriter {
           })
           .then(resolve)
           .catch(reject);
-        // zip
-        //   .generateNodeStream({
-        //     type: "nodebuffer",
-        //     platform: process.platform,
-        //   })
-        //   .pipe(require('fs').createWriteStream("test.xlsx"))
-        //   .on("finish", () => {
-        //     // JSZip generates a readable stream with a "end" event,
-        //     // but is piped here in a writable stream which emits a "finish" event.
-        //     console.log(`test xlsx written.`);
-        //   });
       }
     });
   }
