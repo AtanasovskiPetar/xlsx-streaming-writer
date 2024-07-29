@@ -26,6 +26,7 @@ class XlsxStreamWriter {
     this.finalizeSharedStringsComplete = false;
     this.sheetFile = `${this.dir}/sheet1.xml`;
     this.sharedStringsFile = `${this.dir}/sharedStrings.xml`;
+    this.finalSharedStringsFile = `${this.dir}/tmp_sharedStrings.xml`;
 
     if (!styles) {
       styles = {
@@ -63,9 +64,10 @@ class XlsxStreamWriter {
   }
 
   _initializeFiles() {
-    if (!fs.existsSync(this.dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(this.dir)) {
+      fs.rmdirSync(this.dir, { recursive: true });
     }
+    fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.sheetFile, xmlParts.sheetHeader, 'utf8');
   }
 
@@ -180,27 +182,20 @@ class XlsxStreamWriter {
 
   _finalizeSharedStringsFile() {
     const sharedStringsFooter = xmlParts.sharedStringsFooter;
-    const tempFilePath = `${this.dir}/tmp_sharedStrings.xml`;
     const header = xmlParts.getSharedStringsHeader(this.uniqueCount);
 
     return new Promise((resolve, reject) => {
-      fs.writeFileSync(tempFilePath, header);
+      fs.writeFileSync(this.finalSharedStringsFile, header);
       const readStream = fs.createReadStream(this.sharedStringsFile, { highWaterMark: 1024 * 1024 });
-      const writeStream = fs.createWriteStream(tempFilePath, { flags: 'a' });
+      const writeStream = fs.createWriteStream(this.finalSharedStringsFile, { flags: 'a' });
 
       readStream.on('data', (chunk) => {
         writeStream.write(chunk);
       });
       readStream.on('end', () => {
         writeStream.end(sharedStringsFooter, () => {
-          fs.rename(tempFilePath, this.sharedStringsFile, (err) => {
-            if (err) {
-              reject(err);
-            } else {
-              this.finalizeSharedStringsComplete = true;
-              resolve();
-            }
-          });
+          this.finalizeSharedStringsComplete = true;
+          resolve();
         });
       });
       readStream.on('error', (err) => {
@@ -229,7 +224,7 @@ class XlsxStreamWriter {
     // add "xl/worksheets/sheet1.xml"
     zip.file("xl/worksheets/sheet1.xml", fs.readFileSync(this.sheetFile));
     // add "xl/sharedStrings.xml"
-    zip.file("xl/sharedStrings.xml", fs.readFileSync(this.sharedStringsFile));
+    zip.file("xl/sharedStrings.xml", fs.readFileSync(this.finalSharedStringsFile));
 
     const isBrowser =
       typeof window !== "undefined" &&
