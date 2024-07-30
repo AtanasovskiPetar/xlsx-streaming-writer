@@ -65,7 +65,7 @@ class XlsxStreamWriter {
 
   _initializeFiles() {
     if (fs.existsSync(this.dir)) {
-      fs.rmdirSync(this.dir, { recursive: true });
+      fs.rmSync(this.dir, { recursive: true });
     }
     fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.sheetFile, xmlParts.sheetHeader, 'utf8');
