@@ -76,50 +76,54 @@ class XlsxStreamWriter {
    * @param {Array | Readable} rowsOrStream array of arrays or readable stream of arrays
    * @return {undefined}
    */
-  addRows(rowsOrStream) {
-    this.addRowsComplete = false;
-    let rowsStream;
-    if (rowsOrStream instanceof Readable) rowsStream = rowsOrStream;
-    else if (Array.isArray(rowsOrStream))
-      rowsStream = wrapRowsInStream(rowsOrStream);
-    else
-      throw Error(
-        "Argument must be an array of arrays or a readable stream of arrays",
-      );
-
-    const rowsToXml = this._getRowsToXmlTransformStream();
-    const tsToString = this._getToStringTransforStream();
-
-    const writeStream = fs.createWriteStream(this.sheetFile, { flags: 'a' });
-
-    return new Promise((resolve, reject) => {
-      writeStream.on('finish', () => {
-        this.addRowsComplete = true;
-        resolve();
-      });
-      writeStream.on('error', (err) => {
+  async addRows(rowsOrStream) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        while (!this.addRowsComplete) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
         this.addRowsComplete = false;
-        reject(err);
-      });
+        let rowsStream;
 
-      const handleStreamError = (err) => {
-        this.addRowsComplete = false;
-        reject(err);
-      };
+        if (rowsOrStream instanceof Readable) {
+          rowsStream = rowsOrStream;
+        } else if (Array.isArray(rowsOrStream)) {
+          rowsStream = wrapRowsInStream(rowsOrStream);
+        } else {
+          throw new Error("Argument must be an array of arrays or a readable stream of arrays");
+        }
 
-      if (this.options.inlineStrings) {
-        rowsStream.pipe(rowsToXml).pipe(writeStream).pipe(tsToString);
+        const rowsToXml = this._getRowsToXmlTransformStream();
+        const tsToString = this._getToStringTransforStream();
+        const writeStream = fs.createWriteStream(this.sheetFile, { flags: 'a' });
+
+        const handleStreamError = (err) => {
+          this.addRowsComplete = false;
+          console.error(err);
+          reject(err);
+        };
+
         rowsStream.on('error', handleStreamError);
         rowsToXml.on('error', handleStreamError);
         tsToString.on('error', handleStreamError);
-      } else {
-        rowsStream.pipe(rowsToXml).pipe(writeStream);
-        rowsStream.on('error', handleStreamError);
-        rowsToXml.on('error', handleStreamError);
+        writeStream.on('error', handleStreamError);
+
+        writeStream.on('finish', () => {
+          this.addRowsComplete = true;
+          resolve(true);
+        });
+
+        if (this.options.inlineStrings) {
+          rowsStream.pipe(rowsToXml).pipe(tsToString).pipe(writeStream);
+        } else {
+          rowsStream.pipe(rowsToXml).pipe(writeStream);
+        }
+
+      } catch (err) {
+        reject({ error: true, message: 'Error occurred while retrieving birthday data.' });
       }
     });
-
-  }
+  };
 
   _getToStringTransforStream() {
     const ts = PassThrough();
