@@ -22,7 +22,7 @@ class XlsxStreamWriter {
     this.sharedStringsMap = {};
     this.rowIndex = 0;
     this.uniqueCount = 0;
-    this.addRowsComplete = false;
+    this.addRowsComplete = true;
     this.finalizeSharedStringsComplete = false;
     this.sheetFile = `${this.dir}/sheet1.xml`;
     this.sharedStringsFile = `${this.dir}/sharedStrings.xml`;
